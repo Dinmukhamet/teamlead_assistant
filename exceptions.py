@@ -1,0 +1,2 @@
+class PairAlreadyExists(BaseException):
+    pass
