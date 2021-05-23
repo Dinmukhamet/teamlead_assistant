@@ -11,7 +11,6 @@ from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher import FSMContext
 from aiogram.utils.executor import Executor
 from aiogram.types import ParseMode
-from tabulate import tabulate
 from models import db, on_shutdown, setup
 from services import UserService, ChatService, MentorService
 from models import on_startup as db_startup
@@ -83,18 +82,30 @@ async def set_chat(message: types.Message):
         await bot.send_message(message.chat.id, text="Chat was set. You good to go!")
 
 
+@dp.message_handler(commands=['test'])
+async def test(message: types.Message):
+    pass
+
+
 @dp.message_handler(commands=['shuffle'])
 async def shuffle_users(message: types.Message):
-    await MentorService.shuffle()
-    await bot.send_message(message.chat.id, text="Pairs were updated 🔀")
+    await MentorService.distribute_users()
+    table = await MentorService.generate_table()
+    await bot.send_message(message.chat.id, table, parse_mode=ParseMode.HTML)
+
+
+@dp.message_handler(commands=['reshuffle'])
+async def reshuffle_users(message: types.Message):
+    await MentorService.delete_previous_pairs()
+    await MentorService.distribute_users()
+    table = await MentorService.generate_table()
+    await bot.send_message(message.chat.id, table, parse_mode=ParseMode.HTML)
 
 
 @dp.message_handler(commands=['pairs'])
 async def send_pairs_info(message: types.Message):
-    headers = ["#", "Mentor", "Mentee"]
-    table = await MentorService.get_latest_list()
-    pairs = tabulate(table, headers, tablefmt="pretty")
-    await bot.send_message(message.chat.id, f'<pre>{pairs}</pre>', parse_mode=ParseMode.HTML)
+    table = await MentorService.generate_table()
+    await bot.send_message(message.chat.id, table, parse_mode=ParseMode.HTML)
 
 
 @ dp.message_handler(commands=['mentor'])

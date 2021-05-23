@@ -8,5 +8,4 @@ COPY .env .
 
 RUN pip install -r requirements.txt
 ADD . /app/
-RUN chmod +x scripts/*
 

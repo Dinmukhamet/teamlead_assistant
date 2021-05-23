@@ -6,14 +6,16 @@ import asyncpg
 import simplejson as json
 import aiogram.utils.markdown as md
 import random
+import itertools
 
 from operator import and_
 
 from exceptions import PairAlreadyExists
 from models import db, User, Kata, SolvedKata, Chat, MenteeToMentor
 from aiogram.types.inline_keyboard import InlineKeyboardMarkup, InlineKeyboardButton
-from datetime import datetime
+from datetime import date, datetime
 from config import *
+from tabulate import tabulate
 
 
 class UserService:
@@ -168,32 +170,96 @@ class MentorService:
     async def get_mentees():
         return await User.query.where(User.is_mentor == False).gino.all()
 
+    async def get_number_of_mentees(mentor: User):
+        query = db.text(
+            """
+            SELECT mentor.tg_username AS mentor, COUNT(mentee.tg_id)
+            FROM pairs
+            INNER JOIN users AS mentor
+                ON pairs.mentor_id = mentor.tg_id
+            INNER JOIN users AS mentee
+                ON pairs.mentee_id = mentee.tg_id
+            WHERE mentor.tg_id = :mentor_id AND pairs.created_at::date = (
+                SELECT MAX(created_at::date)
+                FROM pairs
+            )
+            GROUP BY mentor.tg_username;
+            """
+        )
+        data = await db.first(query, mentor_id=mentor.tg_id)
+        return data.count if data is not None else 0
+
     @classmethod
     async def get_random_mentor(cls):
         mentors = await cls.get_mentors()
-        return random.choice(mentors)
+        query = db.text("""
+            SELECT COUNT(*)
+            FROM users
+            WHERE is_mentor = false;
+        """)
+        total = await db.first(query)
+        weights = [
+            abs(total.count - await cls.get_number_of_mentees(mentor)) for mentor in mentors]
+        return random.choices(mentors, weights).pop()
+
+    @classmethod
+    async def get_random_mentee(cls):
+        conn = await asyncpg.connect(POSTGRES_URI)
+        query = await conn.fetch("""
+            SELECT tg_id
+            FROM users
+            WHERE users.tg_id not in (SELECT mentee_id FROM pairs WHERE created_at::date = (SELECT MAX(created_at::date) FROM pairs)) AND is_mentor = false;
+        """)
+        await conn.close()
+        mentees = [record.get('tg_id') for record in query]
+        return await User.query.where(User.tg_id == random.choice(mentees)).gino.first()
 
     @classmethod
     async def find_pair(cls, mentor: User, mentee: User):
         return await MenteeToMentor.query.where(MenteeToMentor.mentor_id == mentor.tg_id and MenteeToMentor.mentee_id == mentee.tg_id).gino.first()
 
     @classmethod
-    async def shuffle(cls):
-        # TODO add validation on date
-        mentors = await cls.get_mentors()
+    async def delete_previous_pairs(cls):
+        max_date = await db.func.max(MenteeToMentor.created_at).gino.scalar()
+        await MenteeToMentor.delete.where(db.cast(MenteeToMentor.created_at, db.Date) == max_date).gino.status()
+
+    @classmethod
+    async def is_mentor_available(cls, mentor: User):
+        today = datetime.now().date()
+        return await MenteeToMentor.query.where(db.cast(MenteeToMentor.created_at, db.Date) == today and MenteeToMentor.mentor_id == mentor.tg_id).gino.first() is None
+
+    @staticmethod
+    async def number_of_available_mentors():
+        query = db.text("""
+            SELECT COUNT(*)
+            FROM users
+            WHERE is_mentor = true AND tg_id in (SELECT mentor_id FROM pairs WHERE created_at::date = CURRENT_DATE);
+        """)
+        total = await db.first(query)
+        return total.count
+
+    @classmethod
+    async def distribute_users(cls):
+        # TODO
+        # 1) add limit on amount of mentees
+        # 2) add probability system
         mentees = await cls.get_mentees()
+        mentors = await cls.get_mentors()
+
+        random.shuffle(mentors)
 
         for mentee in mentees:
-            try:
-                mentor = mentors.pop()
+            _mentor = None
+            for mentor in mentors:
                 pair = await cls.find_pair(mentor, mentee)
-                if pair is None:
-                    raise PairAlreadyExists()
-            except (IndexError, PairAlreadyExists) as e:
-                mentor = await cls.get_random_mentor()
-            finally:
-                await MenteeToMentor.create(mentor_id=mentor.tg_id, mentee_id=mentee.tg_id)
-        return datetime.today().date()
+                if pair is not None:
+                    continue
+                elif cls.is_mentor_available(mentor):
+                    _mentor = mentor
+                    break
+            else:
+                _mentor = await cls.get_random_mentor()
+            await MenteeToMentor.create(mentor_id=_mentor.tg_id, mentee_id=mentee.tg_id)
 
     @classmethod
     async def get_latest_list(cls):
@@ -211,8 +277,12 @@ class MentorService:
             );
         """)
         await conn.close()
-        return [[num, record.get('mentor'), record.get('mentee')]
+        return [(num, record.get('mentor'), record.get('mentee'))
                 for num, record in enumerate(query, start=1)]
-        # result = [dict(record) for record in query]
-        # pairs = json.loads(json.dumps(result).replace("</", "<\\/"))
-        # return pairs
+
+    @classmethod
+    async def generate_table(cls):
+        headers = ["#", "Mentor", "Mentee"]
+        table = await cls.get_latest_list()
+        pairs = tabulate(table, headers, tablefmt="pretty")
+        return f'<pre>{pairs}</pre>'
