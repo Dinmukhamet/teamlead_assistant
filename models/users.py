@@ -17,3 +17,12 @@ class MenteeToMentor(TimedBaseModel):
     id = db.Column(db.Integer, primary_key=True, index=True, unique=True)
     mentor_id = db.Column(db.Integer, db.ForeignKey('users.tg_id'))
     mentee_id = db.Column(db.Integer, db.ForeignKey('users.tg_id'))
+
+
+class Feedback(TimedBaseModel):
+    __tablename__ = "feedbacks"
+
+    id = db.Column(db.Integer, primary_key=True, index=True, unique=True)
+    mentor_id = db.Column(db.Integer, db.ForeignKey('users.tg_id'))
+    mentee_id = db.Column(db.Integer, db.ForeignKey('users.tg_id'))
+    rate = db.Column(db.Integer)

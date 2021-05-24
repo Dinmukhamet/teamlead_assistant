@@ -16,3 +16,8 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 # webserver settings
 WEBAPP_HOST = 'localhost'  # or ip
 WEBAPP_PORT = 3000
+
+MIN_RATE = 1
+MAX_RATE = 5
+
+CREATOR_ID = env.str("CREATOR_ID")

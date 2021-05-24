@@ -1,3 +1,4 @@
+import os
 import datetime
 import sqlalchemy as sa
 
@@ -8,8 +9,8 @@ from gino import Gino
 from envparse import env
 from loguru import logger
 
-
-env.read_envfile('.env')
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+env.read_envfile(os.path.join(BASE_DIR, '.env'))
 db = Gino()
 
 POSTGRES_URI = env.str('DATABASE_URI')

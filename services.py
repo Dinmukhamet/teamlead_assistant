@@ -1,3 +1,4 @@
+from models.users import Feedback
 import typing
 import asyncio
 import aiohttp
@@ -167,7 +168,7 @@ class MentorService:
     async def get_mentors():
         return await User.query.where(User.is_mentor == True).gino.all()
 
-    async def get_mentees():
+    async def list_mentees():
         return await User.query.where(User.is_mentor == False).gino.all()
 
     async def get_number_of_mentees(mentor: User):
@@ -243,7 +244,7 @@ class MentorService:
         # TODO
         # 1) add limit on amount of mentees
         # 2) add probability system
-        mentees = await cls.get_mentees()
+        mentees = await cls.list_mentees()
         mentors = await cls.get_mentors()
 
         random.shuffle(mentors)
@@ -286,3 +287,43 @@ class MentorService:
         table = await cls.get_latest_list()
         pairs = tabulate(table, headers, tablefmt="pretty")
         return f'<pre>{pairs}</pre>'
+
+    @staticmethod
+    async def generate_rate_markup():
+        markup = InlineKeyboardMarkup()
+
+        markup.row(*[InlineKeyboardButton(text=num, callback_data=f"rate_{num}")
+                     for num in range(MIN_RATE, MAX_RATE + 1)])
+        return markup
+
+    @staticmethod
+    async def get_current_mentor(mentee: User) -> User:
+        query = db.text("""
+            SELECT mentor.tg_id, mentor.tg_username
+            FROM pairs
+            INNER JOIN users AS mentor
+                ON mentor.tg_id = pairs.mentor_id
+            WHERE pairs.mentee_id = :mentee_id AND pairs.created_at::date = (
+                SELECT MAX(created_at::date)
+                FROM pairs
+            );
+        """)
+        mentor = await db.first(query, mentee_id=mentee.tg_id)
+        return mentor
+
+    @classmethod
+    async def get_reminder_message(cls, mentee: User) -> str:
+        mentor = await cls.get_current_mentor(mentee)
+        base = f"Please, rate @{mentor.tg_username}'s work"
+        return md.text(base, "<pre>Don't worry.\nIt's all confidential</pre>", sep='\n\n')
+
+    @staticmethod
+    async def rate_mentor(mentee_id: int, mentor_id: int, rate: int):
+        await Feedback.create(
+            mentee_id=mentee_id,
+            mentor_id=mentor_id,
+            rate=rate)
+
+    @staticmethod
+    async def get_mentee(mentee_id: int):
+        return await User.query.where(User.tg_id == mentee_id).gino.first()

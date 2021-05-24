@@ -108,12 +108,12 @@ async def send_pairs_info(message: types.Message):
     await bot.send_message(message.chat.id, table, parse_mode=ParseMode.HTML)
 
 
-@ dp.message_handler(commands=['mentor'])
+@dp.message_handler(commands=['mentor'])
 async def make_user_mentor(message: types.Message):
     await MentorService.make_me_mentor(message.from_user)
 
 
-@ dp.message_handler(commands=['commands'])
+@dp.message_handler(commands=['commands'])
 async def get_commands(message: types.Message):
     markup = ReplyKeyboardMarkup(
         resize_keyboard=True, one_time_keyboard=True)
@@ -122,8 +122,8 @@ async def get_commands(message: types.Message):
     await bot.send_message(message.chat.id, text="Here is commands", reply_markup=markup)
 
 
-@ dp.message_handler(state='*', commands='cancel')
-@ dp.message_handler(Text(equals='cancel', ignore_case=True), state='*')
+@dp.message_handler(state='*', commands='cancel')
+@dp.message_handler(Text(equals='cancel', ignore_case=True), state='*')
 async def cancel_handler(message: types.Message, state: FSMContext):
     """
     Allow user to cancel any action
@@ -139,7 +139,7 @@ async def cancel_handler(message: types.Message, state: FSMContext):
     await message.reply('Cancelled.', reply_markup=types.ReplyKeyboardRemove())
 
 
-@ dp.message_handler(state=Form.name)
+@dp.message_handler(state=Form.name)
 async def process_name(message: types.Message, state: FSMContext):
     """
     Process Codewars username
@@ -181,7 +181,7 @@ async def process_name(message: types.Message, state: FSMContext):
     await state.finish()
 
 
-@ dp.callback_query_handler(lambda msg: msg.data.startswith('user'))
+@dp.callback_query_handler(lambda msg: msg.data.startswith('user'))
 async def process_callback_on_user(callback_query: types.CallbackQuery):
     _, username = callback_query.data.split('_', maxsplit=1)
     await bot.answer_callback_query(callback_query.id)
@@ -197,12 +197,23 @@ async def process_callback_on_user(callback_query: types.CallbackQuery):
             )
 
 
-@ dp.callback_query_handler(lambda msg: msg.data.startswith('next'))
+@dp.callback_query_handler(lambda msg: msg.data.startswith('next'))
 async def process_callback_on_user(callback_query: types.CallbackQuery):
     _, offset = callback_query.data.split('_', maxsplit=1)
     markup, count = await UserService.get_missing_katas(callback_query.message.from_user, int(offset))
 
     await callback_query.message.edit_reply_markup(reply_markup=markup)
+
+
+@dp.callback_query_handler(lambda msg: msg.data.startswith('rate'))
+async def process_callback_on_user(callback_query: types.CallbackQuery):
+    rate = int(callback_query.data.split('_', maxsplit=1).pop())
+    mentee = await MentorService.get_mentee(callback_query.message.chat.id)
+    mentor = await MentorService.get_current_mentor(mentee)
+
+    await MentorService.rate_mentor(mentee.tg_id, mentor.tg_id, rate)
+    await callback_query.message.edit_reply_markup(reply_markup=None)
+    await callback_query.message.edit_text("Thanks for your feedback 💚")
 
 
 async def send_daily_updates():
@@ -211,8 +222,17 @@ async def send_daily_updates():
     await dp.bot.send_message(chat.id, text=msg)
 
 
+async def send_daily_reminder_to_rate():
+    markup = await MentorService.generate_rate_markup()
+    mentees = await MentorService.list_mentees()
+    for mentee in mentees:
+        text = await MentorService.get_reminder_message(mentee)
+        await dp.bot.send_message(mentee.tg_id, text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+
 async def scheduler():
     aioschedule.every().day.at("11:00").do(send_daily_updates)
+    aioschedule.every().monday.at("23:00").do(send_daily_reminder_to_rate)
 
     while True:
         await aioschedule.run_pending()
