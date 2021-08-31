@@ -1,22 +1,23 @@
-import logging
-import aiohttp
-import aiogram.utils.markdown as md
 import asyncio
-import aioschedule
+import logging
 
+import aiogram.utils.markdown as md
+import aiohttp
+import aioschedule
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher import FSMContext
-from aiogram.utils.executor import Executor
+from aiogram.dispatcher.filters import Text
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import ParseMode
-from models import db, on_shutdown, setup
-from services import UserService, ChatService, MentorService
-from models import on_startup as db_startup
-from config import *
-from aiogram.types.reply_keyboard import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types.reply_keyboard import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.utils.executor import Executor
 
+from config import *
+from models import on_shutdown
+from models import on_startup as db_startup
+from models.users import User
+from services import ChatService, MentorService, UserService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +39,8 @@ async def send_welcome(message: types.Message):
     """
     This handler will be called when user sends `/start` or `/help` command
     """
-
+    u = User(tg_id=message.from_user.id, tg_username=message.from_user.username)
+    await u.create()
     await message.reply("Hi!\nI'm the CodewarsBot!\nCreated by @dimashmello")
 
 
@@ -80,11 +82,6 @@ async def set_chat(message: types.Message):
     chat = await ChatService.set_chat(message.chat)
     if chat is not None:
         await bot.send_message(message.chat.id, text="Chat was set. You good to go!")
-
-
-@dp.message_handler(commands=['test'])
-async def test(message: types.Message):
-    pass
 
 
 @dp.message_handler(commands=['shuffle'])
