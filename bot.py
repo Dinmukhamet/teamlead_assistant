@@ -151,7 +151,8 @@ async def process_name(message: types.Message, state: FSMContext):
         async with session.head(f"{CODEWARS_BASE_URL}/{data['cw_username']}") as resp:
             if resp.status in range(200, 300):
                 markup = types.ReplyKeyboardRemove()
-                obj, created = await UserService.get_or_create(**data)
+                obj, created = await UserService.get_or_create(tg_id=message.from_user.id)
+                await obj.update(**data).apply()
                 if created:
                     await bot.send_message(
                         message.chat.id,
